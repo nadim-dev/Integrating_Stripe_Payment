@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function CheckoutModal({ open, onClose, course }) {
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [touched, setTouched] = useState({ name: false, mobile: false });
   const modalRef = useRef(null);
+  const navigate=useNavigate();
+
 
   useEffect(() => {
 
@@ -46,26 +49,17 @@ export default function CheckoutModal({ open, onClose, course }) {
       setTouched({ name: true, mobile: true });
       return;
     }
-    const payload = {
-      id: course.id,
-      name: course.name,
-      price: course.price,
-      image:course.image,
-      user: { name, mobile },
-    };
-
-    const res=await fetch("http://localhost:4000/create-checkout-session",{
-      method:"POST",
-       headers: {
-      "Content-Type": "application/json",
+   navigate("/checkout", {
+    state: {
+      course,
+      user: {
+        name,
+        mobile,
       },
-      body:JSON.stringify(payload),
-    });
-    const data=await res.json();
-    if(data.url){
-      window.location.href=data.url;
-    }
+    },
+  });
 
+  onClose();
 };
 
   if (!open) return null;

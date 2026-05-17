@@ -30,50 +30,54 @@ app.post("/create-checkout-session",async (req,res)=>{
   console.log("create checkout session function is running");
   const {id,name,image}=req.body;
   const {price}=await courses.findById(id).lean("price");
-  const existingcheckoutsession=await session.findOne({userMobile:req.body.user.mobile,courseId:id,status:"unpaid"});
+  const existingcheckoutsession=await session.findOne({userMobile:req.body.user.mobile,courseId:id});
+  console.log("existing checkout session",existingcheckoutsession);
   //* checking existing checkout session
   if(existingcheckoutsession && existingcheckoutsession.expiresAt > Date.now()){
-    return res.json({url:newcheckoutSession.url});
+    return res.json({clientSecret: existingcheckoutsession.client_secret});
   };
 
-  const newcheckoutSession=await stripeClient.checkout.sessions.create({
-       success_url:"http://localhost:5173?session_id={CHECKOUT_SESSION_ID}",
-   
-       line_items: [
-         {
-           price_data:{
-              product_data:{
-                 name:name,
-                 description:"Best English Classes In the World",
-                 images:[image],
-              },
-              unit_amount:100*price,
-              currency:"inr"
-           }, 
-          //  adjustable_quantity:{
-          //    enabled:true
-          //  },   
-           quantity:1,
-         },
-       ],
-       metadata:{
-          userName:req.body.user.name,
-          userMobile:req.body.user.mobile,
-          courseId:id,
-       },
-       mode: 'payment',
-  });
 
+
+
+  const newcheckoutSession=await stripeClient.checkout.sessions.create({
+    ui_mode: "embedded_page",
+    return_url:"http://localhost:5173/payment-success?session_id={CHECKOUT_SESSION_ID}",
+     line_items: [
+        {
+          price_data: {
+            product_data: {
+              name: name,
+              description: "Best English Classes In the World",
+              images: [image],
+            },
+         unit_amount: 100 * price,
+         currency: "inr",
+        },
+          quantity: 1,
+        },
+      ],
+
+      metadata: {
+        userName: req.body.user.name,
+        userMobile: req.body.user.mobile,
+        courseId: id,
+      },
+      mode: "payment",
+  })
+
+  console.log("Client Secret",newcheckoutSession.client_secret);
+  
   await session.create({
       sessionId:newcheckoutSession.id,
       userName:req.body.user.name,
       userMobile:req.body.user.mobile,
       paymentStatus:"unpaid",
       courseId:id,
-      url:newcheckoutSession.url,
+      client_secret:newcheckoutSession.client_secret,
   })
 
-  return res.json({url:newcheckoutSession.url});
+  return res.json({clientSecret: newcheckoutSession.client_secret});
 });
 
 app.post("/verify-payment",async (req,res)=>{
@@ -92,10 +96,10 @@ app.post("/verify-payment",async (req,res)=>{
         courseId:storedSession.metadata.courseId,
         sessionId:sessionId,
       })
-      return res.status(200).json({"message":"payment is successfull"});
+      return res.status(200).json({"message":"payment is successfull",success:"true"});
 
   }else{
-    return res.status(402).json({"message":"payment is not successful"});
+    return res.status(402).json({"message":"payment is not successful",success:"false"});
   }
   }catch(err){
     console.log(err.message);

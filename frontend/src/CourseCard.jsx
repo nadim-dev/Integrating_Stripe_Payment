@@ -1,5 +1,5 @@
 import { useState } from "react";
-import CheckoutModal from "./CheckoutModal";
+import CheckoutModal from "./checkoutModal";
 
 export default function CourseCard({ _id:id, name, price, image }) {
   const [open, setOpen] = useState(false);
