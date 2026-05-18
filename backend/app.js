@@ -37,9 +37,6 @@ app.post("/create-checkout-session",async (req,res)=>{
     return res.json({clientSecret: existingcheckoutsession.client_secret});
   };
 
-
-
-
   const newcheckoutSession=await stripeClient.checkout.sessions.create({
     ui_mode: "embedded_page",
     return_url:"http://localhost:5173/payment-success?session_id={CHECKOUT_SESSION_ID}",
@@ -84,30 +81,44 @@ app.post("/verify-payment",async (req,res)=>{
   console.log("verify payment function is running");
   const {sessionId}=req.body;
   if(!sessionId){
-    return res.status(400).json({"message":"sessionId is required"});
+    return res.status(400).json({"message":"sessionId is required",success:false});
   }
   try{
-  const storedSession=await stripeClient.checkout.sessions.retrieve(sessionId);
-  if(storedSession.payment_status== "paid"){
-      await session.findOneAndUpdate({sessionId:sessionId},{status:"paid"});
-      await PurchasedCourse.create({
-        amountPaid:storedSession.amount_total/100,
-        accessExpiresAt:new Date(Date.now()+180 * 24 * 60 *60*1000),
-        courseId:storedSession.metadata.courseId,
-        sessionId:sessionId,
-      })
-      return res.status(200).json({"message":"payment is successfull",success:"true"});
-
-  }else{
-    return res.status(402).json({"message":"payment is not successful",success:"false"});
-  }
+    const storedSession=await session.findOne({sessionId:sessionId});
+    if(!storedSession){
+      return res.status(404).json({"message":"Session not found",success:false});
+    }
+    return res.status(200).json({
+      message:"Payment status fetched successfully",
+      success:storedSession.paymentStatus == "paid",
+      paymentStatus:storedSession.paymentStatus,
+    });
   }catch(err){
     console.log(err.message);
     return res.status(500).json({message: "Internal server error"});
   }
 
-
 });
+
+app.post("/xyz",async (req,res)=>{
+  console.log("Webhook controller is running");
+  console.log(req.body.data.object);
+  
+  const checkoutSession=req.body.data.object;
+  if(checkoutSession.payment_status == "paid"){
+    await session.findOneAndUpdate({sessionId:checkoutSession.id},{paymentStatus:"paid"});
+    await PurchasedCourse.create({
+        amountPaid:checkoutSession.amount_total/100,
+        accessExpiresAt:new Date(Date.now()+180 * 24 * 60 *60*1000),
+        courseId:checkoutSession.metadata.courseId,
+        sessionId:checkoutSession.id,
+      })
+      return res.status(200).json({"message":"Data received"});
+  }else{
+    await session.findOneAndUpdate({sessionId:checkoutSession.id},{status:"failed"});
+    return res.status(200).json({ message: "Payment not paid" });
+  }
+}) 
 
 app.listen(4000, () => {
   console.log("Server started");
