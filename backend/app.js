@@ -10,9 +10,47 @@ import { PurchasedCourse } from "./models/purchasedCourseModal.js";
 try{
 const app = express();
 await connectDB();
-app.use(express.json());
 const stripeClient = new Stripe(process.env.stripe_secret_key);
+const endpointSecret=process.env.endpoint_secret_key;
 
+app.post("/webhook", express.raw({type: 'application/json'}),
+async (req,res)=>{
+  console.log("Webhook controller is running");
+  const signature=req.headers['stripe-signature'];
+  let event;
+  try {
+       event=stripeClient.webhooks.constructEvent(
+        req.body,
+        signature,
+        endpointSecret
+      );
+    } catch (err) {
+      console.log(`⚠️ Webhook signature verification failed.`, err.message);
+      return res.sendStatus(400);
+    }
+   if (event.type !== "checkout.session.completed") {
+      return res.status(200).json({received: true,});
+   }
+  const checkoutSession=event.data.object;
+  if(checkoutSession.payment_status == "paid"){
+  await Promise.all([
+   session.findOneAndUpdate({sessionId: checkoutSession.id}, {paymentStatus:"paid"}),
+   PurchasedCourse.create({
+      amountPaid: checkoutSession.amount_total / 100,
+      accessExpiresAt: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
+      courseId: checkoutSession.metadata.courseId,
+      sessionId: checkoutSession.id,
+     })
+   ]);
+    return res.status(200).json({"message":"Data received"});
+  }else{
+    await session.findOneAndUpdate({sessionId:checkoutSession.id},{paymentStatus:"failed"});
+    return res.status(200).json({ message: "Payment not paid" });
+  }
+}) 
+
+
+app.use(express.json());
 app.use(
   cors({
     origin: "http://localhost:5173",
@@ -100,25 +138,6 @@ app.post("/verify-payment",async (req,res)=>{
 
 });
 
-app.post("/xyz",async (req,res)=>{
-  console.log("Webhook controller is running");
-  console.log(req.body.data.object);
-  
-  const checkoutSession=req.body.data.object;
-  if(checkoutSession.payment_status == "paid"){
-    await session.findOneAndUpdate({sessionId:checkoutSession.id},{paymentStatus:"paid"});
-    await PurchasedCourse.create({
-        amountPaid:checkoutSession.amount_total/100,
-        accessExpiresAt:new Date(Date.now()+180 * 24 * 60 *60*1000),
-        courseId:checkoutSession.metadata.courseId,
-        sessionId:checkoutSession.id,
-      })
-      return res.status(200).json({"message":"Data received"});
-  }else{
-    await session.findOneAndUpdate({sessionId:checkoutSession.id},{status:"failed"});
-    return res.status(200).json({ message: "Payment not paid" });
-  }
-}) 
 
 app.listen(4000, () => {
   console.log("Server started");
